@@ -1,13 +1,8 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import StreamingResponse
-import uvicorn
-import io
+from fastapi.responses import JSONResponse
 import os
 import cv2
 import numpy as np
-from PIL import Image
-
-# === Import the background remover ===
 from .remove_background import remove_background
 
 app = FastAPI()
@@ -28,19 +23,27 @@ async def api_remove_background(file: UploadFile = File(...)):
     temp_input_path = os.path.join("temp_input.png")
     cv2.imwrite(temp_input_path, image)
 
-    # Call SAM processor
-    output_path = remove_background(temp_input_path)
+    try:
+        # Call SAM processor
+        output_path, status_log = remove_background(temp_input_path)
 
-    # Load the result image
-    with open(output_path, "rb") as f:
-        image_bytes = f.read()
+        # Read the result as base64 if you want to embed in JSON (optional)
+        with open(output_path, "rb") as f:
+            image_bytes = f.read()
 
-    # Optionally delete temp files
-    os.remove(temp_input_path)
-    os.remove(output_path)
+        # Clean up
+        os.remove(temp_input_path)
+        os.remove(output_path)
 
-    return StreamingResponse(io.BytesIO(image_bytes), media_type="image/png")
+        return JSONResponse(content={
+            "status": "success",
+            "steps": status_log,
+            "message": "Background removed successfully",
+            "image": image_bytes.hex()  # or base64 if needed
+        })
 
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={
+            "status": "error",
+            "message": str(e)
+        })
